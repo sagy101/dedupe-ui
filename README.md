@@ -114,7 +114,9 @@ Double-click `run.bat` to launch with your system Python.
 
 ## Project layout
 
-- `dedupe_ui_stage2.py` — app entry point (UI + logic)
+- `dedupe_ui_backup.py` — original single-file version
+- `dedupe_ui.py` — app entry point
+- `utils.py`, `hashing.py`, `stage1.py`, `verifier.py`, `gui.py` — split modules by responsibility
 - `README.md` — this file
 
 ## License
