@@ -38,7 +38,7 @@ This avoids hashing everything, keeps the UI responsive, and lets you control wh
    ```
 3. Run the app:
    ```powershell
-   python .\dedupe_ui_stage2.py
+   python .\dedupe_ui.py
    ```
 4. In the app:
    - Pick **Folder A (keep)** and **Folder B (dedupe target)**.
@@ -60,7 +60,7 @@ python -m pip install -U blake3
 
 pyinstaller --onefile --noconsole --name WinDedupeUI ^
   --hidden-import blake3 ^
-  .\dedupe_ui_stage2.py
+  .\dedupe_ui.py
 # EXE is in .\dist\WinDedupeUI.exe
 ```
 
@@ -72,7 +72,7 @@ Create `run.bat` next to the script:
 
 ```bat
 @echo off
-python "%~dp0\dedupe_ui_stage2.py"
+python "%~dp0\dedupe_ui.py"
 pause
 ```
 
