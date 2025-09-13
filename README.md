@@ -18,7 +18,7 @@ This avoids hashing everything, keeps the UI responsive, and lets you control wh
 
 ## Features
 
-- **Tkinter** UI (no external UI deps)
+- **Qt (PySide6)** UI
 - Two-stage flow (name+size → selective hashing)
 - Optional **BLAKE3** hasher (much faster than SHA-256 if installed)
 - Parallel hashing with adjustable worker count
@@ -36,11 +36,15 @@ This avoids hashing everything, keeps the UI responsive, and lets you control wh
    ```powershell
    python -m pip install -U blake3
    ```
-3. Run the app:
+3. Install dependencies:
+   ```powershell
+   python -m pip install -U pyside6
+   ```
+4. Run the app:
    ```powershell
    python .\dedupe_ui.py
    ```
-4. In the app:
+5. In the app:
    - Pick **Folder A (keep)** and **Folder B (dedupe target)**.
    - Click **Stage 1: Find name+size candidates**.
    - Select rows and click **Stage 2: Verify hash (selected)** (or verify all pending).
