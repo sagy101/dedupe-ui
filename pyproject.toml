@@ -15,3 +15,14 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest"]
+
+[tool.setuptools]
+py-modules = [
+    "dedupe_ui",
+    "dedupe_ui_backup",
+    "hashing",
+    "utils",
+    "gui",
+    "stage1",
+    "verifier",
+]
