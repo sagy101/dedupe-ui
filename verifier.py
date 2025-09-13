@@ -1,4 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+import time
 
 from hashing import file_digest
 
@@ -8,12 +10,24 @@ class Verifier:
     Given selected candidate rows, compute B hash, then compute A hash for each a_path until a match or exhaustion.
     Marks status MATCH (green) or DIFF (red). Skips any row that's already verified.
     """
-    def __init__(self, algo: str, workers: int, ui_progress=None, ui_counter=None):
+    def __init__(
+        self,
+        algo: str,
+        workers: int,
+        ui_progress=None,
+        ui_counter=None,
+        ui_log=None,
+        stop_event: threading.Event | None = None,
+        pause_event: threading.Event | None = None,
+    ):
         self.algo = algo
 
         self.workers = max(1, workers)
         self.ui_progress = ui_progress or (lambda txt, pct: None)
         self.ui_counter = ui_counter or (lambda done, total, matches: None)
+        self.ui_log = ui_log or (lambda msg: None)
+        self.stop_event = stop_event or threading.Event()
+        self.pause_event = pause_event or threading.Event()
 
     def verify_rows(self, rows: list[dict]):
         pending = [r for r in rows if r.get("status") == "PENDING"]
@@ -41,6 +55,10 @@ class Verifier:
         with ThreadPoolExecutor(max_workers=self.workers) as ex:
             futures = [ex.submit(_hash_b, r) for r in pending]
             for fut in as_completed(futures):
+                if self.stop_event.is_set():
+                    break
+                while self.pause_event.is_set():
+                    time.sleep(0.1)
                 row, hb, err = fut.result()
                 if err:
                     row["status"] = "ERROR"
@@ -49,9 +67,15 @@ class Verifier:
                 else:
                     row["hash_b"] = hb
                     row["hash_algo"] = self.algo
+                self.ui_log(f"Hashed B: {row['path_b']}")
 
         # For each row, compute A hashes lazily until we find a match
         for row in pending:
+            if self.stop_event.is_set():
+                break
+            while self.pause_event.is_set():
+                time.sleep(0.1)
+
             if row["status"] == "ERROR":
                 done += 1
                 self.ui_progress(f"Stage 2: verified {done}/{total}", done/max(1,total))
@@ -61,9 +85,14 @@ class Verifier:
             matched = False
             hashed_any = False
             for ap in row["a_paths"]:
+                if self.stop_event.is_set():
+                    break
+                while self.pause_event.is_set():
+                    time.sleep(0.1)
                 try:
                     ha = _digest(ap)
                     hashed_any = True
+                    self.ui_log(f"Hashed A: {ap}")
                 except Exception:
                     continue
 
@@ -89,5 +118,8 @@ class Verifier:
             self.ui_progress(f"Stage 2: verified {done}/{total}", done/max(1,total))
             self.ui_counter(done, total, matches)
 
-        self.ui_progress(f"Stage 2: done. Verified {done} item(s), {matches} match(es).", 1.0)
+        if self.stop_event.is_set():
+            self.ui_progress("Stage 2: stopped.", None)
+        else:
+            self.ui_progress(f"Stage 2: done. Verified {done} item(s), {matches} match(es).", 1.0)
         return done, matches
