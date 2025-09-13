@@ -57,28 +57,37 @@ class Verifier:
                 self.ui_progress(f"Stage 2: verified {done}/{total}", done/max(1,total))
                 self.ui_counter(done, total, matches)
                 continue
-            try:
-                matched = False
-                for ap in row["a_paths"]:
+
+            matched = False
+            hashed_any = False
+            for ap in row["a_paths"]:
+                try:
                     ha = _digest(ap)
-                    row["hash_a"] = ha
-                    if ha == row["hash_b"]:
-                        matched = True
-                        row["status"] = "MATCH"
-                        matches += 1
-                        # put this A path first (for display)
-                        if row["a_paths"][0] != ap:
-                            row["a_paths"].remove(ap)
-                            row["a_paths"].insert(0, ap)
-                        break
-                if not matched:
-                    row["status"] = "DIFF"
-            except Exception:
+                    hashed_any = True
+                except Exception:
+                    continue
+
+                row["hash_a"] = ha
+                if ha == row["hash_b"]:
+                    matched = True
+                    row["status"] = "MATCH"
+                    matches += 1
+                    # put this A path first (for display)
+                    if row["a_paths"][0] != ap:
+                        row["a_paths"].remove(ap)
+                        row["a_paths"].insert(0, ap)
+                    break
+
+            if matched:
+                pass
+            elif hashed_any:
+                row["status"] = "DIFF"
+            else:
                 row["status"] = "ERROR"
-            finally:
-                done += 1
-                self.ui_progress(f"Stage 2: verified {done}/{total}", done/max(1,total))
-                self.ui_counter(done, total, matches)
+
+            done += 1
+            self.ui_progress(f"Stage 2: verified {done}/{total}", done/max(1,total))
+            self.ui_counter(done, total, matches)
 
         self.ui_progress(f"Stage 2: done. Verified {done} item(s), {matches} match(es).", 1.0)
         return done, matches
