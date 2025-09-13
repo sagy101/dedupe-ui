@@ -1,4 +1,4 @@
-# win-dedupe-ui
+# dedupe-ui
 
 Two-stage cross-platform GUI (Windows, macOS, Linux) to find and remove duplicates from **Folder B** that have an identical file in **Folder A**.
 
