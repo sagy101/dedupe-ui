@@ -27,7 +27,7 @@ class Stage1Scanner:
 
     def run(self):
         # Index A by name+size
-        a_map = {}  # name_lower -> {size -> [path_a,...]}
+        a_map = {}  # normalized_name -> {size -> [path_a,...]}
         files_a = list(iter_files(self.A))
         self.a_total = len(files_a); self.a_done = 0
         self._prog(f"Stage 1: indexing Folder A ({self.a_total} files)…", 0.0)
@@ -36,7 +36,7 @@ class Stage1Scanner:
         for p in files_a:
             try:
                 sz = os.path.getsize(to_long_path(p))
-                nl = os.path.basename(p).lower()
+                nl = os.path.normcase(os.path.basename(p))
                 a_map.setdefault(nl, {}).setdefault(sz, []).append(p)
             except Exception as e:
                 self.errors.append((p, str(e)))
@@ -55,7 +55,7 @@ class Stage1Scanner:
 
         for p in files_b:
             try:
-                nl = os.path.basename(p).lower()
+                nl = os.path.normcase(os.path.basename(p))
                 if nl not in a_map:
                     continue
                 sz = os.path.getsize(to_long_path(p))
