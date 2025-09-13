@@ -1,6 +1,7 @@
 import os
 import hashlib
 import importlib.util
+from pathlib import Path
 
 # ================== Config ==================
 READ_CHUNK = 8 * 1024 * 1024  # 8MB
@@ -20,16 +21,17 @@ def new_hasher(algo: str):
         return blake3.blake3()
     return hashlib.new("sha256")
 
-def to_long_path(p: str) -> str:
-    r"""Long-path safe Windows path with \\?\ and \\?\UNC\ prefixes when needed."""
+def to_long_path(p: str | Path) -> str:
+    r"""Return a path string with Windows long-path prefixes when needed."""
+    path_str = str(p)
     if os.name != "nt":
-        return p
-    p = os.path.abspath(p)
-    if p.startswith("\\\\?\\"):
-        return p
-    if p.startswith("\\\\"):
-        return "\\\\?\\UNC\\" + p[2:]
-    return "\\\\?\\" + p
+        return path_str
+    path_str = os.path.abspath(path_str)
+    if path_str.startswith("\\\\?\\"):
+        return path_str
+    if path_str.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + path_str[2:]
+    return "\\\\?\\" + path_str
 
 def human_size(n: int) -> str:
     x = float(n)
@@ -38,7 +40,7 @@ def human_size(n: int) -> str:
             return f"{x:.1f} {u}" if u != "B" else f"{int(x)} {u}"
         x /= 1024.0
 
-def iter_files(folder: str):
-    for root, _, files in os.walk(folder):
-        for name in files:
-            yield os.path.join(root, name)
+def iter_files(folder: str | Path):
+    for path in Path(folder).rglob("*"):
+        if path.is_file():
+            yield str(path)

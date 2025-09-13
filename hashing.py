@@ -3,13 +3,15 @@ import json
 import threading
 from pathlib import Path
 
+from platformdirs import user_cache_dir
+
 from utils import to_long_path, new_hasher, READ_CHUNK
 
+
 def _cache_path() -> Path:
-    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
-    p = Path(base) / "DedupeUI"
-    p.mkdir(parents=True, exist_ok=True)
-    return p / "hash_cache.json"
+    cache_dir = Path(user_cache_dir("DedupeUI"))
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / "hash_cache.json"
 
 # ================== Hash Cache ==================
 class HashCache:

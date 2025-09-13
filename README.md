@@ -1,6 +1,6 @@
 # win-dedupe-ui
 
-Two-stage Windows GUI to find and remove duplicates from **Folder B** that have an identical file in **Folder A**.
+Two-stage cross-platform GUI (Windows, macOS, Linux) to find and remove duplicates from **Folder B** that have an identical file in **Folder A**.
 
 **Identity rule:** same **filename** (case-insensitive) **and** same **content hash**.  
 **Deletion safety:** only files in **Folder B** can be deleted—and only after an **explicit hash match** (green).
@@ -18,11 +18,11 @@ This avoids hashing everything, keeps the UI responsive, and lets you control wh
 
 ## Features
 
-- Windows 11 **Tkinter** UI (no external UI deps)
+- **Tkinter** UI (no external UI deps)
 - Two-stage flow (name+size → selective hashing)
 - Optional **BLAKE3** hasher (much faster than SHA-256 if installed)
 - Parallel hashing with adjustable worker count
-- Hash cache on disk: `%LOCALAPPDATA%\DedupeUI\hash_cache.json`
+- Hash cache on disk using the OS-specific cache directory
 - Long path support (`\\?\` prefix)
 - Delete **only** from Folder B; Folder A is never touched
 - Clear progress text + counters
