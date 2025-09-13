@@ -461,8 +461,8 @@ class App(QMainWindow):
         worker.progress.connect(self._stage1_progress_cb)
         worker.stats.connect(self._stage1_stats_cb)
         worker.log.connect(self.log_message)
-        worker.finished.connect(lambda res: self._stage1_finished(res, thread, worker))
-        worker.error.connect(lambda msg: self._stage1_error(msg, thread, worker))
+        worker.finished.connect(self._stage1_finished)
+        worker.error.connect(self._stage1_error)
         thread.start()
         self.stage1_thread = thread
         self.stage1_worker = worker
@@ -471,11 +471,16 @@ class App(QMainWindow):
         self.btn_pause.setText("Pause")
         self.btn_stop.setEnabled(True)
 
-    def _stage1_finished(self, results: list[dict], thread: QThread, worker: QObject):
-        thread.quit()
-        thread.wait()
-        worker.deleteLater()
-        thread.deleteLater()
+    def _stage1_finished(self, results: list[dict]):
+        thread = getattr(self, "stage1_thread", None)
+        worker = getattr(self, "stage1_worker", None)
+        if thread is not None:
+            thread.quit()
+            thread.wait()
+        if worker is not None:
+            worker.deleteLater()
+        if thread is not None:
+            thread.deleteLater()
         self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.current_worker = None
@@ -491,11 +496,16 @@ class App(QMainWindow):
         self.btn_verify_sel.setEnabled(False)
         self.btn_verify_all.setEnabled(enable)
 
-    def _stage1_error(self, msg: str, thread: QThread, worker: QObject):
-        thread.quit()
-        thread.wait()
-        worker.deleteLater()
-        thread.deleteLater()
+    def _stage1_error(self, msg: str):
+        thread = getattr(self, "stage1_thread", None)
+        worker = getattr(self, "stage1_worker", None)
+        if thread is not None:
+            thread.quit()
+            thread.wait()
+        if worker is not None:
+            worker.deleteLater()
+        if thread is not None:
+            thread.deleteLater()
         self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.current_worker = None
@@ -515,7 +525,7 @@ class App(QMainWindow):
         if not rows:
             return
         to_verify = [self.candidates[i] for i in rows]
-        self._run_verifier(to_verify, rows)
+        self._run_verifier(to_verify)
 
     def verify_all_pending(self):
         pending_indices = [i for i, r in enumerate(self.candidates) if r.get("status") == "PENDING"]
@@ -523,9 +533,9 @@ class App(QMainWindow):
             self.set_status("Nothing to verify: no pending rows.", None)
             return
         rows = [self.candidates[i] for i in pending_indices]
-        self._run_verifier(rows, None)
+        self._run_verifier(rows)
 
-    def _run_verifier(self, rows_to_verify: list[dict], update_indices: list[int] | None):
+    def _run_verifier(self, rows_to_verify: list[dict]):
         self.btn_verify_sel.setEnabled(False)
         self.btn_verify_all.setEnabled(False)
         self.btn_delete.setEnabled(False)
@@ -541,8 +551,8 @@ class App(QMainWindow):
         worker.progress.connect(self._stage2_progress_cb)
         worker.counter.connect(self._stage2_counter_cb)
         worker.log.connect(self.log_message)
-        worker.finished.connect(lambda d, m: self._stage2_finished(d, m, update_indices, thread, worker))
-        worker.error.connect(lambda msg: self._stage2_error(msg, thread, worker))
+        worker.finished.connect(self._stage2_finished)
+        worker.error.connect(self._stage2_error)
         thread.start()
         self.stage2_thread = thread
         self.stage2_worker = worker
@@ -551,18 +561,16 @@ class App(QMainWindow):
         self.btn_pause.setText("Pause")
         self.btn_stop.setEnabled(True)
 
-    def _stage2_finished(
-        self,
-        done: int,
-        matches: int,
-        update_indices: list[int] | None,
-        thread: QThread,
-        worker: QObject,
-    ):
-        thread.quit()
-        thread.wait()
-        worker.deleteLater()
-        thread.deleteLater()
+    def _stage2_finished(self, done: int, matches: int):
+        thread = getattr(self, "stage2_thread", None)
+        worker = getattr(self, "stage2_worker", None)
+        if thread is not None:
+            thread.quit()
+            thread.wait()
+        if worker is not None:
+            worker.deleteLater()
+        if thread is not None:
+            thread.deleteLater()
         self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.current_worker = None
@@ -575,11 +583,16 @@ class App(QMainWindow):
             self.btn_verify_all.setEnabled(True)
             HASH_CACHE.save()
 
-    def _stage2_error(self, msg: str, thread: QThread, worker: QObject):
-        thread.quit()
-        thread.wait()
-        worker.deleteLater()
-        thread.deleteLater()
+    def _stage2_error(self, msg: str):
+        thread = getattr(self, "stage2_thread", None)
+        worker = getattr(self, "stage2_worker", None)
+        if thread is not None:
+            thread.quit()
+            thread.wait()
+        if worker is not None:
+            worker.deleteLater()
+        if thread is not None:
+            thread.deleteLater()
         self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.current_worker = None
