@@ -14,7 +14,16 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: linux
+            ext: ""
+          - os: macos-latest
+            artifact_name: macos
+            ext: ""
+          - os: windows-latest
+            artifact_name: windows
+            ext: ".exe"
 
     steps:
       - uses: actions/checkout@v4
@@ -27,12 +36,12 @@ jobs:
           pip install pyinstaller
           pip install .
       - name: Build executable
-        run: pyinstaller dedupe_ui.py --name dedupe-ui --onefile
+        run: pyinstaller dedupe_ui.py --name dedupe-ui-${{ matrix.artifact_name }} --onefile
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dedupe-ui-${{ matrix.os }}
-          path: dist/dedupe-ui*
+          name: dedupe-ui-${{ matrix.artifact_name }}
+          path: dist/dedupe-ui-${{ matrix.artifact_name }}${{ matrix.ext }}
 
   release:
     name: Create release
@@ -40,6 +49,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -55,5 +66,42 @@ jobs:
           tag_name: v${{ env.VERSION }}
           name: v${{ env.VERSION }}
           files: dist/**
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bump version for next release
+        id: bump
+        run: |
+          python - <<'PY'
+          import os, re, pathlib
+          p = pathlib.Path('pyproject.toml')
+          text = p.read_text()
+          m = re.search(r'^version = "(.*)"', text, flags=re.MULTILINE)
+          version = m.group(1)
+          major, minor, patch = map(int, version.split('.'))
+          patch += 1
+          new_version = f"{major}.{minor}.{patch}"
+          p.write_text(re.sub(r'^version = ".*"', f'version = "{new_version}"', text, flags=re.MULTILINE))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+            fh.write(f'version={new_version}\n')
+          PY
+      - name: Commit new version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: bump version to ${{ steps.bump.outputs.version }} [skip ci]"
+          git push
+      - name: Prune old releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          releases=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/$REPO/releases?per_page=100" | \
+            jq -r '.[] | "\(.id) \(.tag_name)"')
+          echo "$releases" | tail -n +4 | while read id tag; do
+            curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$REPO/releases/$id"
+            curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$REPO/git/refs/tags/$tag"
+          done
