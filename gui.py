@@ -198,6 +198,21 @@ class App(QMainWindow):
         for c in range(1, 8):
             stats.setColumnStretch(c, 1)
 
+        # Search & filter controls
+        filter_layout = QHBoxLayout()
+        layout.addLayout(filter_layout)
+        filter_layout.addWidget(QLabel("Search:"))
+        self.search_box = QLineEdit()
+        filter_layout.addWidget(self.search_box)
+        filter_layout.addWidget(QLabel("Status:"))
+        self.status_filter = QComboBox()
+        self.status_filter.addItems(["All", "PENDING", "MATCH", "DIFF", "ERROR"])
+        filter_layout.addWidget(self.status_filter)
+        filter_layout.addStretch()
+
+        self.search_box.textChanged.connect(self.refresh_table)
+        self.status_filter.currentTextChanged.connect(self.refresh_table)
+
         # Table
         self.table = QTableWidget(0, 7)
         headers = [
@@ -215,6 +230,7 @@ class App(QMainWindow):
         self.table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.table)
         self.table.itemSelectionChanged.connect(self._on_selection_change)
+        self.displayed_rows: list[int] = []
 
     # -------------------- Helpers --------------------
     def set_status(self, text: str, pct: float | None = None):
@@ -223,13 +239,49 @@ class App(QMainWindow):
             self.progress_bar.setValue(int(max(0.0, min(1.0, pct)) * 100))
         QApplication.processEvents()
 
+    def refresh_table(self):
+        search = self.search_box.text().lower()
+        status = self.status_filter.currentText()
+        filtered = []
+        for idx, r in enumerate(self.candidates):
+            if status != "All" and r["status"] != status:
+                continue
+            if search and search not in r["name"].lower():
+                continue
+            filtered.append(idx)
+        self.displayed_rows = filtered
+        self.table.setRowCount(len(filtered))
+        color_map = {
+            "MATCH": QColor("#d9f7be"),
+            "DIFF": QColor("#ffd6d6"),
+            "ERROR": QColor("#ffe7ba"),
+        }
+        for row, idx in enumerate(filtered):
+            r = self.candidates[idx]
+            a_first = r["a_paths"][0] if r["a_paths"] else ""
+            hash_b_short = (r["hash_b"][:16] + "…") if r.get("hash_b") else ""
+            values = [
+                r["status"],
+                r["name"],
+                human_size(r["size"]),
+                r.get("hash_algo") or "",
+                hash_b_short,
+                a_first,
+                r["path_b"],
+            ]
+            for col, val in enumerate(values):
+                item = QTableWidgetItem(val)
+                if r["status"] in color_map:
+                    item.setBackground(color_map[r["status"]])
+                self.table.setItem(row, col, item)
+        self._on_selection_change()
+
     def _on_selection_change(self):
         rows = self.table.selectionModel().selectedRows()
-        enable_verify = bool(rows) and bool(self.candidates)
+        indices = [self.displayed_rows[r.row()] for r in rows]
+        enable_verify = bool(indices) and bool(self.candidates)
         self.btn_verify_sel.setEnabled(enable_verify)
-        any_match = any(
-            self.candidates[r.row()]["status"] == "MATCH" for r in rows
-        ) if rows else False
+        any_match = any(self.candidates[i]["status"] == "MATCH" for i in indices)
         self.btn_delete.setEnabled(any_match)
 
     def browse_a(self):
@@ -267,8 +319,10 @@ class App(QMainWindow):
             return
 
         # Clear table and state
-        self.table.setRowCount(0)
         self.candidates.clear()
+        self.search_box.clear()
+        self.status_filter.setCurrentIndex(0)
+        self.refresh_table()
         self.label_v_done.setText("0")
         self.label_v_total.setText("0")
         self.label_v_matches.setText("0")
@@ -298,12 +352,7 @@ class App(QMainWindow):
 
         self.set_status(f"Stage 1 complete: {len(results)} candidate(s).", 1.0)
         self.candidates = results
-        self.table.setRowCount(len(results))
-        for idx, r in enumerate(results):
-            a_first = r["a_paths"][0] if r["a_paths"] else ""
-            values = [r["status"], r["name"], human_size(r["size"]), "", "", a_first, r["path_b"]]
-            for col, val in enumerate(values):
-                self.table.setItem(idx, col, QTableWidgetItem(val))
+        self.refresh_table()
         enable = bool(results)
         self.btn_verify_sel.setEnabled(False)
         self.btn_verify_all.setEnabled(enable)
@@ -325,7 +374,7 @@ class App(QMainWindow):
         self.label_v_matches.setText(str(matches))
 
     def verify_selected(self):
-        rows = sorted({r.row() for r in self.table.selectionModel().selectedRows()})
+        rows = sorted({self.displayed_rows[r.row()] for r in self.table.selectionModel().selectedRows()})
         if not rows:
             return
         to_verify = [self.candidates[i] for i in rows]
@@ -373,36 +422,10 @@ class App(QMainWindow):
         worker.deleteLater()
         thread.deleteLater()
 
-        targets = update_indices if update_indices is not None else list(range(len(self.candidates)))
-        for idx in targets:
-            if idx >= len(self.candidates):
-                continue
-            r = self.candidates[idx]
-            a_first = r["a_paths"][0] if r["a_paths"] else ""
-            hash_b_short = (r["hash_b"][:16] + "…") if r.get("hash_b") else ""
-            values = [
-                r["status"],
-                r["name"],
-                human_size(r["size"]),
-                r.get("hash_algo") or "",
-                hash_b_short,
-                a_first,
-                r["path_b"],
-            ]
-            for col, val in enumerate(values):
-                item = QTableWidgetItem(val)
-                if r["status"] in ("MATCH", "DIFF", "ERROR"):
-                    color_map = {
-                        "MATCH": QColor("#d9f7be"),
-                        "DIFF": QColor("#ffd6d6"),
-                        "ERROR": QColor("#ffe7ba"),
-                    }
-                    item.setBackground(color_map[r["status"]])
-                self.table.setItem(idx, col, item)
+        self.refresh_table()
 
         self.set_status(f"Stage 2 complete: verified {done}, matches {matches}.", 1.0)
         self.btn_verify_all.setEnabled(True)
-        self._on_selection_change()
         HASH_CACHE.save()
 
     def _stage2_error(self, msg: str, thread: QThread, worker: QObject):
@@ -414,7 +437,7 @@ class App(QMainWindow):
 
     # -------------------- Deletion --------------------
     def delete_selected_matches(self):
-        rows = sorted({r.row() for r in self.table.selectionModel().selectedRows()}, reverse=True)
+        rows = sorted({self.displayed_rows[r.row()] for r in self.table.selectionModel().selectedRows()}, reverse=True)
         if not rows:
             return
         to_delete = []
@@ -438,19 +461,21 @@ class App(QMainWindow):
             return
         errors = []
         deleted = 0
-        for idx, path_b in to_delete:
+        total = len(to_delete)
+        for i, (idx, path_b) in enumerate(to_delete, start=1):
             try:
                 os.remove(to_long_path(path_b))
                 deleted += 1
-                self.table.removeRow(idx)
                 self.candidates.pop(idx)
             except Exception as e:  # pragma: no cover - filesystem issues
                 errors.append((path_b, str(e)))
+            self.set_status(f"Deleting {i}/{total}", i / total)
         msg = f"Deleted {deleted} file(s)."
         if errors:
             msg += f" {len(errors)} error(s) occurred."
+        self.refresh_table()
         QMessageBox.information(self, "Deletion complete", msg)
-        self._on_selection_change()
+        self.set_status("Deletion complete.", 1.0)
 
 
 def main():  # pragma: no cover - UI entry point
