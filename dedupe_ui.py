@@ -10,11 +10,10 @@ Optional BLAKE3 (if installed) for faster hashing; otherwise uses SHA-256.
 
 Fixes included:
 - BLAKE3 detection via importlib.util.find_spec (no deprecation warnings)
-- Proper Tk variable initialization using value=... (avoids AttributeError)
 - Raw-string docstrings to silence unicode-escape warnings
 """
 
-from gui import App
+from gui import main
 import os
 
 if __name__ == "__main__":
@@ -24,5 +23,4 @@ if __name__ == "__main__":
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except Exception:
             pass
-    app = App()
-    app.mainloop()
+    main()
