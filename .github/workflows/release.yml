@@ -36,7 +36,7 @@ jobs:
           pip install pyinstaller
           pip install .
       - name: Build executable
-        run: pyinstaller dedupe_ui.py --name dedupe-ui-${{ matrix.artifact_name }} --onefile
+        run: pyinstaller dedupe_ui.py --name dedupe-ui-${{ matrix.artifact_name }} --onefile --hidden-import blake3
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:

@@ -25,7 +25,7 @@ This avoids hashing everything, keeps the UI responsive, and lets you control wh
 
 - **Qt (PySide6)** UI
 - Two-stage flow (name+size → selective hashing)
-- Optional **BLAKE3** hasher (much faster than SHA-256 if installed)
+- Built-in **BLAKE3** hasher (much faster than SHA-256)
 - Parallel hashing with adjustable worker count
 - Hash cache on disk using the OS-specific cache directory
 - Long path support (`\\?\` prefix)
@@ -42,10 +42,6 @@ DedupeUI can be used in two ways.
 2. Install dependencies:
    ```bash
    python -m pip install -r requirements.txt
-   ```
-   (Optional) Install **BLAKE3** for faster hashing:
-   ```bash
-   python -m pip install blake3
    ```
 3. Launch:
    ```bash
@@ -67,7 +63,6 @@ Bundle your own single-file executable with PyInstaller:
 
 ```powershell
 python -m pip install -U pyinstaller
-python -m pip install -U blake3  # optional, for BLAKE3 support
 
 pyinstaller --onefile --noconsole --name DedupeUI ^
   --hidden-import blake3 ^
@@ -86,7 +81,7 @@ Why `--hidden-import blake3`? The app imports BLAKE3 lazily; this flag ensures P
 
 ## Performance tips
 
-- Use **BLAKE3** if available (set in the dropdown).
+- Use **BLAKE3** (default) for best speed.
 - Tweak **Workers**:
   - USB/SD: 4–8
   - SSD/NVMe: 8–16
@@ -95,10 +90,6 @@ Why `--hidden-import blake3`? The app imports BLAKE3 lazily; this flag ensures P
 
 ## Troubleshooting
 
-- **blake3 not in dropdown:** install for the same Python:
-  ```powershell
-  python -m pip install blake3
-  ```
 - **Getting stuck mid-scan:** this two-stage flow avoids whole-tree hashing—use Stage 2 to hash selected rows only.
 - **Anti-virus slowdowns:** exclude the target folders temporarily while scanning (remember to re-enable).
 - **Permissions:** run PowerShell as admin if needed for protected paths.

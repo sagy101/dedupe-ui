@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "platformdirs",
     "PySide6",
+    "blake3",
     "send2trash",
 ]
 

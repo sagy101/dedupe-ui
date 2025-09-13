@@ -1,4 +1,4 @@
 PySide6
 platformdirs
-blake3  # optional: faster hashing
+blake3
 send2trash
