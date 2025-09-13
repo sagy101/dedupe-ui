@@ -1,4 +1,9 @@
-# dedupe-ui
+# DedupeUI
+
+<p align="center">
+  <a href="https://www.python.org/downloads/"><img alt="Python 3.11+" src="https://img.shields.io/badge/Python-3.11%2B-blue" /></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-green" /></a>
+</p>
 
 Two-stage cross-platform GUI (Windows, macOS, Linux) to find and remove duplicates from **Folder B** that have an identical file in **Folder A**.
 
@@ -29,58 +34,48 @@ This avoids hashing everything, keeps the UI responsive, and lets you control wh
 
 ## Quick start
 
-### Option A — run with Python
+DedupeUI can be used in two ways.
 
-1. Install Python 3.11+ (3.12 OK).
-2. (Optional) Install **BLAKE3** for speed:
-   ```powershell
-   python -m pip install -U blake3
+### 1. Run from source
+
+1. Install Python 3.11+.
+2. Install dependencies:
+   ```bash
+   python -m pip install -r requirements.txt
    ```
-3. Install dependencies:
-   ```powershell
-   python -m pip install -U pyside6
+   (Optional) Install **BLAKE3** for faster hashing:
+   ```bash
+   python -m pip install blake3
    ```
-4. Run the app:
-   ```powershell
-   python .\dedupe_ui.py
+3. Launch:
+   ```bash
+   python ./dedupe_ui.py
    ```
-5. In the app:
+4. In the app:
    - Pick **Folder A (keep)** and **Folder B (dedupe target)**.
    - Click **Stage 1: Find name+size candidates**.
-   - Select rows and click **Stage 2: Verify hash (selected)** (or verify all pending).
+   - Select rows and click **Stage 2: Verify hash (selected)**.
    - Only **green (MATCH)** rows are true duplicates; select them and click **Delete Selected from Folder B**.
 
-> If the hasher dropdown only shows `sha256`, it means `blake3` isn’t installed for the Python you’re running.
-> Install it in the same interpreter.
+### 2. Run a release file
 
-### Option B — single-file EXE (no Python needed)
+Download a pre-built executable from the [releases page](../../releases/latest) and run it. No Python installation is required.
 
-Bundle with PyInstaller:
+## Build a release (optional)
+
+Bundle your own single-file executable with PyInstaller:
 
 ```powershell
 python -m pip install -U pyinstaller
-# include blake3 if you want BLAKE3 available inside the EXE
-python -m pip install -U blake3
+python -m pip install -U blake3  # optional, for BLAKE3 support
 
-pyinstaller --onefile --noconsole --name WinDedupeUI ^
+pyinstaller --onefile --noconsole --name DedupeUI ^
   --hidden-import blake3 ^
   .\dedupe_ui.py
-# EXE is in .\dist\WinDedupeUI.exe
+# Executable is in .\dist\DedupeUI.exe
 ```
 
 Why `--hidden-import blake3`? The app imports BLAKE3 lazily; this flag ensures PyInstaller bundles it.
-
-### Option C — simple runner (.bat)
-
-Create `run.bat` next to the script:
-
-```bat
-@echo off
-python "%~dp0\dedupe_ui.py"
-pause
-```
-
-Double-click `run.bat` to launch with your system Python.
 
 ## Safety notes
 

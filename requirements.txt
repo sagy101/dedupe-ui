@@ -1,0 +1,3 @@
+PySide6
+platformdirs
+blake3  # optional: faster hashing
