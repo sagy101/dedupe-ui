@@ -1,0 +1,74 @@
+name: build-and-release
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: ${{ github.event.pull_request.merged == true }}
+    name: Build binaries
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install .
+      - name: Build executable
+        run: pyinstaller dedupe_ui.py --name dedupe-ui --onefile
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dedupe-ui-${{ matrix.os }}
+          path: dist/dedupe-ui*
+
+  release:
+    if: ${{ github.event.pull_request.merged == true }}
+    name: Create release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Prepare assets
+        run: |
+          mv dist/dedupe-ui-windows-latest/dedupe-ui.exe dist/dedupe-ui-windows.exe
+          mv dist/dedupe-ui-macos-latest/dedupe-ui dist/dedupe-ui-macos
+          mv dist/dedupe-ui-ubuntu-latest/dedupe-ui dist/dedupe-ui-linux
+          chmod +x dist/dedupe-ui-macos dist/dedupe-ui-linux
+          rm -r dist/dedupe-ui-*-latest
+      - name: Extract version
+        run: echo "VERSION=$(grep -Po '(?<=^version = \")[^\"]*' pyproject.toml)" >> $GITHUB_ENV
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: v${{ env.VERSION }}
+          files: |
+            dist/dedupe-ui-windows.exe
+            dist/dedupe-ui-macos
+            dist/dedupe-ui-linux
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
