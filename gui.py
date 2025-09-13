@@ -1,8 +1,9 @@
 import os
 import sys
+import threading
 
 from PySide6.QtCore import Qt, QObject, QThread, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QDropEvent, QDragEnterEvent
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QProgressBar,
+    QTextEdit,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -29,17 +31,46 @@ from verifier import Verifier
 from hashing import HASH_CACHE
 
 
+class FolderLineEdit(QLineEdit):
+    """QLineEdit that accepts folders via drag-and-drop."""
+
+    def __init__(self):
+        super().__init__()
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event: QDragEnterEvent):  # pragma: no cover - GUI event
+        if event.mimeData().hasUrls():
+            url = event.mimeData().urls()[0]
+            if os.path.isdir(url.toLocalFile()):
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+    def dropEvent(self, event: QDropEvent):  # pragma: no cover - GUI event
+        urls = event.mimeData().urls()
+        if urls:
+            path = urls[0].toLocalFile()
+            if os.path.isdir(path):
+                self.setText(path)
+                event.acceptProposedAction()
+                return
+        event.ignore()
+
+
 # -------------------- Worker Threads --------------------
 class Stage1Worker(QObject):
     progress = Signal(str, float)
     stats = Signal(dict)
     finished = Signal(list)
     error = Signal(str)
+    log = Signal(str)
 
     def __init__(self, folder_a: str, folder_b: str):
         super().__init__()
         self.folder_a = folder_a
         self.folder_b = folder_b
+        self.stop_event = threading.Event()
+        self.pause_event = threading.Event()
 
     def run(self):
         try:
@@ -48,11 +79,23 @@ class Stage1Worker(QObject):
                 self.folder_b,
                 ui_progress=lambda t, p: self.progress.emit(t, p),
                 ui_stats=lambda d: self.stats.emit(d),
+                ui_log=lambda m: self.log.emit(m),
+                stop_event=self.stop_event,
+                pause_event=self.pause_event,
             )
             results = scanner.run()
             self.finished.emit(results)
         except Exception as e:  # pragma: no cover - safety
             self.error.emit(str(e))
+
+    def stop(self):
+        self.stop_event.set()
+
+    def pause(self):
+        self.pause_event.set()
+
+    def resume(self):
+        self.pause_event.clear()
 
 
 class Stage2Worker(QObject):
@@ -60,12 +103,15 @@ class Stage2Worker(QObject):
     counter = Signal(int, int, int)
     finished = Signal(int, int)
     error = Signal(str)
+    log = Signal(str)
 
     def __init__(self, algo: str, workers: int, rows: list[dict]):
         super().__init__()
         self.algo = algo
         self.workers = workers
         self.rows = rows
+        self.stop_event = threading.Event()
+        self.pause_event = threading.Event()
 
     def run(self):
         try:
@@ -74,11 +120,23 @@ class Stage2Worker(QObject):
                 self.workers,
                 ui_progress=lambda t, p: self.progress.emit(t, p),
                 ui_counter=lambda d, t, m: self.counter.emit(d, t, m),
+                ui_log=lambda m: self.log.emit(m),
+                stop_event=self.stop_event,
+                pause_event=self.pause_event,
             )
             done, matches = verifier.verify_rows(self.rows)
             self.finished.emit(done, matches)
         except Exception as e:  # pragma: no cover - safety
             self.error.emit(str(e))
+
+    def stop(self):
+        self.stop_event.set()
+
+    def pause(self):
+        self.pause_event.set()
+
+    def resume(self):
+        self.pause_event.clear()
 
 
 # -------------------- Main Window --------------------
@@ -91,6 +149,7 @@ class App(QMainWindow):
 
         self.algos = ["blake3", "sha256"] if has_blake3() else ["sha256"]
         self.candidates: list[dict] = []
+        self.current_worker = None
 
         # -------------------- Layout --------------------
         central = QWidget(self)
@@ -103,14 +162,14 @@ class App(QMainWindow):
         layout.addWidget(top_widget)
 
         top.addWidget(QLabel("Folder A (keep):"), 0, 0)
-        self.entry_a = QLineEdit()
+        self.entry_a = FolderLineEdit()
         top.addWidget(self.entry_a, 0, 1)
         btn_browse_a = QPushButton("Browse…")
         btn_browse_a.clicked.connect(self.browse_a)
         top.addWidget(btn_browse_a, 0, 2)
 
         top.addWidget(QLabel("Folder B (dedupe target):"), 1, 0)
-        self.entry_b = QLineEdit()
+        self.entry_b = FolderLineEdit()
         top.addWidget(self.entry_b, 1, 1)
         btn_browse_b = QPushButton("Browse…")
         btn_browse_b.clicked.connect(self.browse_b)
@@ -152,6 +211,16 @@ class App(QMainWindow):
         self.btn_delete.setEnabled(False)
         self.btn_delete.clicked.connect(self.delete_selected_matches)
         actions.addWidget(self.btn_delete)
+
+        self.btn_pause = QPushButton("Pause")
+        self.btn_pause.setEnabled(False)
+        self.btn_pause.clicked.connect(self.toggle_pause)
+        actions.addWidget(self.btn_pause)
+
+        self.btn_stop = QPushButton("Stop")
+        self.btn_stop.setEnabled(False)
+        self.btn_stop.clicked.connect(self.stop_current)
+        actions.addWidget(self.btn_stop)
 
         # Progress & status
         status_layout = QHBoxLayout()
@@ -232,12 +301,28 @@ class App(QMainWindow):
         self.table.itemSelectionChanged.connect(self._on_selection_change)
         self.displayed_rows: list[int] = []
 
+        # Debug log panel
+        self.log_box = QGroupBox("Debug Log")
+        self.log_box.setCheckable(True)
+        self.log_box.setChecked(False)
+        log_layout = QVBoxLayout()
+        self.log_view = QTextEdit()
+        self.log_view.setReadOnly(True)
+        log_layout.addWidget(self.log_view)
+        self.log_box.setLayout(log_layout)
+        layout.addWidget(self.log_box)
+        self.log_box.toggled.connect(self.log_view.setVisible)
+        self.log_view.setVisible(False)
+
     # -------------------- Helpers --------------------
     def set_status(self, text: str, pct: float | None = None):
         self.status_label.setText(text)
         if pct is not None:
             self.progress_bar.setValue(int(max(0.0, min(1.0, pct)) * 100))
         QApplication.processEvents()
+
+    def log_message(self, msg: str):
+        self.log_view.append(msg)
 
     def refresh_table(self):
         search = self.search_box.text().lower()
@@ -283,6 +368,24 @@ class App(QMainWindow):
         self.btn_verify_sel.setEnabled(enable_verify)
         any_match = any(self.candidates[i]["status"] == "MATCH" for i in indices)
         self.btn_delete.setEnabled(any_match)
+
+    def toggle_pause(self):
+        worker = getattr(self, "current_worker", None)
+        if not worker:
+            return
+        if worker.pause_event.is_set():
+            worker.resume()
+            self.btn_pause.setText("Pause")
+            self.set_status("Resumed.", None)
+        else:
+            worker.pause()
+            self.btn_pause.setText("Resume")
+            self.set_status("Paused.", None)
+
+    def stop_current(self):
+        worker = getattr(self, "current_worker", None)
+        if worker:
+            worker.stop()
 
     def browse_a(self):
         p = QFileDialog.getExistingDirectory(self, "Select Folder A (keep)")
@@ -338,17 +441,29 @@ class App(QMainWindow):
         thread.started.connect(worker.run)
         worker.progress.connect(self._stage1_progress_cb)
         worker.stats.connect(self._stage1_stats_cb)
+        worker.log.connect(self.log_message)
         worker.finished.connect(lambda res: self._stage1_finished(res, thread, worker))
         worker.error.connect(lambda msg: self._stage1_error(msg, thread, worker))
         thread.start()
         self.stage1_thread = thread
         self.stage1_worker = worker
+        self.current_worker = worker
+        self.btn_pause.setEnabled(True)
+        self.btn_pause.setText("Pause")
+        self.btn_stop.setEnabled(True)
 
     def _stage1_finished(self, results: list[dict], thread: QThread, worker: QObject):
         thread.quit()
         thread.wait()
         worker.deleteLater()
         thread.deleteLater()
+        self.btn_pause.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+        self.current_worker = None
+
+        if getattr(worker, "stop_event", threading.Event()).is_set():
+            self.set_status("Stage 1 stopped.", None)
+            return
 
         self.set_status(f"Stage 1 complete: {len(results)} candidate(s).", 1.0)
         self.candidates = results
@@ -362,6 +477,9 @@ class App(QMainWindow):
         thread.wait()
         worker.deleteLater()
         thread.deleteLater()
+        self.btn_pause.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+        self.current_worker = None
         QMessageBox.critical(self, "Stage 1 failed", msg)
 
     # -------------------- Stage 2 --------------------
@@ -403,11 +521,16 @@ class App(QMainWindow):
         thread.started.connect(worker.run)
         worker.progress.connect(self._stage2_progress_cb)
         worker.counter.connect(self._stage2_counter_cb)
+        worker.log.connect(self.log_message)
         worker.finished.connect(lambda d, m: self._stage2_finished(d, m, update_indices, thread, worker))
         worker.error.connect(lambda msg: self._stage2_error(msg, thread, worker))
         thread.start()
         self.stage2_thread = thread
         self.stage2_worker = worker
+        self.current_worker = worker
+        self.btn_pause.setEnabled(True)
+        self.btn_pause.setText("Pause")
+        self.btn_stop.setEnabled(True)
 
     def _stage2_finished(
         self,
@@ -421,18 +544,26 @@ class App(QMainWindow):
         thread.wait()
         worker.deleteLater()
         thread.deleteLater()
+        self.btn_pause.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+        self.current_worker = None
 
-        self.refresh_table()
-
-        self.set_status(f"Stage 2 complete: verified {done}, matches {matches}.", 1.0)
-        self.btn_verify_all.setEnabled(True)
-        HASH_CACHE.save()
+        if getattr(worker, "stop_event", threading.Event()).is_set():
+            self.set_status("Stage 2 stopped.", None)
+        else:
+            self.refresh_table()
+            self.set_status(f"Stage 2 complete: verified {done}, matches {matches}.", 1.0)
+            self.btn_verify_all.setEnabled(True)
+            HASH_CACHE.save()
 
     def _stage2_error(self, msg: str, thread: QThread, worker: QObject):
         thread.quit()
         thread.wait()
         worker.deleteLater()
         thread.deleteLater()
+        self.btn_pause.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+        self.current_worker = None
         QMessageBox.critical(self, "Stage 2 failed", msg)
 
     # -------------------- Deletion --------------------

@@ -1,4 +1,6 @@
 import os
+import time
+import threading
 
 from utils import iter_files, to_long_path
 
@@ -9,11 +11,23 @@ class Stage1Scanner:
     For each B candidate, store the list of possible A paths (all with the same name+size).
     No hashing here.
     """
-    def __init__(self, folder_a: str, folder_b: str, ui_progress=None, ui_stats=None):
+    def __init__(
+        self,
+        folder_a: str,
+        folder_b: str,
+        ui_progress=None,
+        ui_stats=None,
+        ui_log=None,
+        stop_event: threading.Event | None = None,
+        pause_event: threading.Event | None = None,
+    ):
         self.A = folder_a
         self.B = folder_b
         self.ui_progress = ui_progress or (lambda txt, pct: None)
         self.ui_stats = ui_stats or (lambda d: None)
+        self.ui_log = ui_log or (lambda msg: None)
+        self.stop_event = stop_event or threading.Event()
+        self.pause_event = pause_event or threading.Event()
         self.errors = []
         self.a_total = 0
         self.a_done = 0
@@ -34,10 +48,16 @@ class Stage1Scanner:
         self._stats()
 
         for p in files_a:
+            if self.stop_event.is_set():
+                self._prog("Stage 1: stopped.", None)
+                return []
+            while self.pause_event.is_set():
+                time.sleep(0.1)
             try:
                 sz = os.path.getsize(to_long_path(p))
                 nl = os.path.normcase(os.path.basename(p))
                 a_map.setdefault(nl, {}).setdefault(sz, []).append(p)
+                self.ui_log(f"Indexed A: {p}")
             except Exception as e:
                 self.errors.append((p, str(e)))
             finally:
@@ -54,6 +74,11 @@ class Stage1Scanner:
         self._prog(f"Stage 1: scanning Folder B for name+size matches ({total_b} files)…", 0.0)
 
         for p in files_b:
+            if self.stop_event.is_set():
+                self._prog("Stage 1: stopped.", None)
+                return results
+            while self.pause_event.is_set():
+                time.sleep(0.1)
             try:
                 nl = os.path.normcase(os.path.basename(p))
                 if nl not in a_map:
@@ -75,6 +100,7 @@ class Stage1Scanner:
                 })
                 self.candidates += 1
                 self._stats()
+                self.ui_log(f"Scanned B: {p}")
             except Exception as e:
                 self.errors.append((p, str(e)))
             finally:
