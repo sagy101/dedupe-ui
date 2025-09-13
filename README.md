@@ -103,14 +103,6 @@ Why `--hidden-import blake3`? The app imports BLAKE3 lazily; this flag ensures P
 - **Anti-virus slowdowns:** exclude the target folders temporarily while scanning (remember to re-enable).
 - **Permissions:** run PowerShell as admin if needed for protected paths.
 
-## Roadmap / Nice-to-haves
-
-- “Send to **Recycle Bin**” (instead of permanent delete)
-- **Quarantine (Move)** to a review folder
-- **CSV export** of results
-- **Stop scan** button
-- Drag-and-drop folder selection
-
 ## Project layout
 
 - `dedupe_ui_backup.py` — original single-file version

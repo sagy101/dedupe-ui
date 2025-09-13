@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from utils import human_size, to_long_path, has_blake3, DEFAULT_WORKERS
+import file_ops
 from stage1 import Stage1Scanner
 from verifier import Verifier
 from hashing import HASH_CACHE
@@ -185,6 +186,13 @@ class App(QMainWindow):
         self.spin_workers.setRange(1, 64)
         self.spin_workers.setValue(DEFAULT_WORKERS)
         top.addWidget(self.spin_workers, 2, 3)
+
+        top.addWidget(QLabel("Quarantine Folder:"), 3, 0)
+        self.entry_q = FolderLineEdit()
+        top.addWidget(self.entry_q, 3, 1)
+        btn_browse_q = QPushButton("Browse…")
+        btn_browse_q.clicked.connect(self.browse_q)
+        top.addWidget(btn_browse_q, 3, 2)
         top.setColumnStretch(1, 1)
 
         # Actions
@@ -206,11 +214,16 @@ class App(QMainWindow):
         actions.addWidget(self.btn_verify_all)
 
         self.btn_delete = QPushButton(
-            "Delete Selected from Folder B (only verified matches)"
+            "Send Selected to Recycle Bin"
         )
         self.btn_delete.setEnabled(False)
         self.btn_delete.clicked.connect(self.delete_selected_matches)
         actions.addWidget(self.btn_delete)
+
+        self.btn_quarantine = QPushButton("Quarantine Selected")
+        self.btn_quarantine.setEnabled(False)
+        self.btn_quarantine.clicked.connect(self.quarantine_selected_matches)
+        actions.addWidget(self.btn_quarantine)
 
         self.btn_pause = QPushButton("Pause")
         self.btn_pause.setEnabled(False)
@@ -368,6 +381,7 @@ class App(QMainWindow):
         self.btn_verify_sel.setEnabled(enable_verify)
         any_match = any(self.candidates[i]["status"] == "MATCH" for i in indices)
         self.btn_delete.setEnabled(any_match)
+        self.btn_quarantine.setEnabled(any_match)
 
     def toggle_pause(self):
         worker = getattr(self, "current_worker", None)
@@ -396,6 +410,11 @@ class App(QMainWindow):
         p = QFileDialog.getExistingDirectory(self, "Select Folder B (dedupe target)")
         if p:
             self.entry_b.setText(p)
+
+    def browse_q(self):
+        p = QFileDialog.getExistingDirectory(self, "Select Quarantine Folder")
+        if p:
+            self.entry_q.setText(p)
 
     def _stage1_stats_cb(self, d: dict):
         if "a_done" in d:
@@ -586,7 +605,7 @@ class App(QMainWindow):
         confirm = QMessageBox.question(
             self,
             "Confirm deletion",
-            f"Delete {len(to_delete)} file(s) from Folder B?\nThis action is PERMANENT.",
+            f"Send {len(to_delete)} file(s) to Recycle Bin?",
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -595,18 +614,63 @@ class App(QMainWindow):
         total = len(to_delete)
         for i, (idx, path_b) in enumerate(to_delete, start=1):
             try:
-                os.remove(to_long_path(path_b))
+                file_ops.send_to_recycle_bin(path_b)
                 deleted += 1
                 self.candidates.pop(idx)
             except Exception as e:  # pragma: no cover - filesystem issues
                 errors.append((path_b, str(e)))
             self.set_status(f"Deleting {i}/{total}", i / total)
-        msg = f"Deleted {deleted} file(s)."
+        msg = f"Sent {deleted} file(s) to Recycle Bin."
         if errors:
             msg += f" {len(errors)} error(s) occurred."
         self.refresh_table()
-        QMessageBox.information(self, "Deletion complete", msg)
+        QMessageBox.information(self, "Recycle Bin", msg)
         self.set_status("Deletion complete.", 1.0)
+
+    def quarantine_selected_matches(self):
+        rows = sorted({self.displayed_rows[r.row()] for r in self.table.selectionModel().selectedRows()}, reverse=True)
+        if not rows:
+            return
+        to_move = []
+        for idx in rows:
+            r = self.candidates[idx]
+            if r["status"] == "MATCH":
+                to_move.append((idx, r["path_b"]))
+        if not to_move:
+            QMessageBox.information(
+                self,
+                "Nothing to quarantine",
+                "Select verified MATCH rows (green) to quarantine from Folder B.",
+            )
+            return
+        qdir = self.entry_q.text().strip()
+        if not qdir or not os.path.isdir(qdir):
+            QMessageBox.critical(self, "Missing folder", "Please choose a Quarantine folder.")
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Confirm quarantine",
+            f"Move {len(to_move)} file(s) to the quarantine folder?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        errors = []
+        moved = 0
+        total = len(to_move)
+        for i, (idx, path_b) in enumerate(to_move, start=1):
+            try:
+                file_ops.quarantine_file(path_b, qdir)
+                moved += 1
+                self.candidates.pop(idx)
+            except Exception as e:  # pragma: no cover - filesystem issues
+                errors.append((path_b, str(e)))
+            self.set_status(f"Quarantining {i}/{total}", i / total)
+        msg = f"Moved {moved} file(s) to quarantine."
+        if errors:
+            msg += f" {len(errors)} error(s) occurred."
+        self.refresh_table()
+        QMessageBox.information(self, "Quarantine complete", msg)
+        self.set_status("Quarantine complete.", 1.0)
 
 
 def main():  # pragma: no cover - UI entry point
